@@ -1,0 +1,6 @@
+resource_group_name = "python-app-rg"
+location           = "North Europe"
+app_service_name   = "python-app-service"
+database_name      = "python-app-db"
+admin_user         = "admin"
+admin_password     = "Zltn123"
