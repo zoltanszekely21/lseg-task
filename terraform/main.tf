@@ -8,10 +8,6 @@ terraform {
   }
 }
 
-provider "azurerm" {
-  features {}
-}
-
 
 # Resource Group
 module "resource_group" {
