@@ -20,13 +20,13 @@ jobs:
 
     - name: Build and Push Docker Image
       run: |
-        az acr login --name myacrregistry
-        docker build -t myacrregistry.azurecr.io/python-app:latest .
-        docker push myacrregistry.azurecr.io/python-app:latest
+        az acr login --name zltnacr
+        docker build -t zltnacr.azurecr.io/python-app:latest .
+        docker push zltnacr.azurecr.io/python-app:latest
 
     - name: Deploy to Azure Web App
       run: |
         az webapp config container set --name python-app-service \
           --resource-group python-app-rg \
-          --docker-custom-image-name myacrregistry.azurecr.io/python-app:latest \
-          --docker-registry-server-url https://myacrregistry.azurecr.io
+          --docker-custom-image-name zltnacr.azurecr.io/python-app:latest \
+          --docker-registry-server-url https://zltnacr.azurecr.io
