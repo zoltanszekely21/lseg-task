@@ -73,10 +73,10 @@ The Azure Well-Architected Framework helps us understand the pros and cons of de
 - Configure Autoscaling rules for App Service based on CPU usage & memory load.
 - Optimize Docker images by using multi-stage builds to create smaller, faster container images.
 - Enable Blue-Green Deployment for Zero Downtime: Deploy new App Service instances alongside existing ones and swap traffic once verified.
-- Integrate lower Non-Production environments for greate code quality control: Dev, Integration, QA, Regression
+- Integrate lower Non-Production environments for greater code quality control: Dev, Integration, QA, Regression.
 - Implement automated Terraform testing using Terratest to test modules before deployment.
 - Implement Prometheus to collect custom application metrics.
-- Migrate to Kubernetes (AKS) instead of App Service for greater scalability and container orchestration.
+- Migrate to Kubernetes (AKS) instead of App Service for greater scalability and container orchestration (= higher cost).
 - Multi-region deployment for high availability: Deploy PostgreSQL and App Service across multiple Azure regions for disaster recovery.
 
 
