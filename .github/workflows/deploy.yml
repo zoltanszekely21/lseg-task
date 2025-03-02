@@ -1,0 +1,130 @@
+name: Terraform Infra and Dockerized App Deployment to Azure
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  terraform:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: latest
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Terraform Init
+        working-directory: terraform/
+        run: terraform init -reconfigure
+
+      - name: Check and Unlock Terraform State
+        working-directory: terraform/
+        run: |
+          LOCK_ID=$(terraform state pull 2>/dev/null | jq -r .serial || echo "NO_LOCK")
+          if [ "$LOCK_ID" != "NO_LOCK" ]; then
+            echo "Unlocking Terraform state: $LOCK_ID"
+            terraform force-unlock -force $LOCK_ID || echo "Failed to unlock, but continuing..."
+          else
+            echo "No active lock found."
+          fi
+        continue-on-error: true 
+
+      - name: Terraform Validate
+        working-directory: terraform/
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: terraform/
+        run: terraform plan
+
+      - name: Import Existing Resource Group (If Needed)
+        working-directory: terraform/
+        run: |
+          RESOURCE_EXISTS=$(az group show --name python-app-rg --query "id" -o tsv || echo "NOT_FOUND")
+          if [ "$RESOURCE_EXISTS" != "NOT_FOUND" ]; then
+            echo "Resource Group already exists. Importing into Terraform..."
+            terraform import azurerm_resource_group.rg /subscriptions/f94c5a2b-36b1-4083-b44a-afe3f7f18fae/resourceGroups/python-app-rg || echo "Resource already managed."
+          else
+            echo "Resource Group does not exist, Terraform will create it."
+          fi
+
+      - name: Terraform Apply with Auto-Unlock
+        working-directory: terraform/
+        run: |
+          MAX_RETRIES=5
+          RETRY_INTERVAL=15  # Wait time in seconds between retries
+          RETRY_COUNT=0
+
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            echo "Attempt $(($RETRY_COUNT + 1)) of $MAX_RETRIES..."
+            
+            # Run Terraform Apply
+            if terraform apply -auto-approve; then
+              echo "Terraform Apply successful!"
+              exit 0
+            else
+              echo "Terraform Apply failed. Checking for state lock..."
+
+              # Get Lock ID if the state is locked
+              LOCK_ID=$(terraform state pull 2>/dev/null | jq -r .serial || echo "NO_LOCK")
+              
+              if [ "$LOCK_ID" != "NO_LOCK" ]; then
+                echo "Unlocking Terraform state: $LOCK_ID"
+                terraform force-unlock -force $LOCK_ID || echo "Failed to unlock, but continuing..."
+              else
+                echo "No active lock found, retrying..."
+              fi
+
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              echo "Waiting $RETRY_INTERVAL seconds before retrying..."
+              sleep $RETRY_INTERVAL
+            fi
+          done
+
+          echo "Terraform Apply failed after $MAX_RETRIES attempts. Exiting..."
+          exit 1
+
+  build-and-deploy:
+    name: Build & Deploy Container
+    needs: terraform
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Build Docker Image
+        run: |
+          docker build -t zltnacr.azurecr.io/python-hello-world:${{ github.sha }} .
+          docker tag zltnacr.azurecr.io/python-hello-world:${{ github.sha }} zltnacr.azurecr.io/python-hello-world:latest
+
+      - name: Push to ACR
+        run: |
+          az acr login --name myacr
+          docker push zltnacr.azurecr.io/python-hello-world:${{ github.sha }}
+          docker push zltnacr.azurecr.io/python-hello-world:latest
+
+      - name: Deploy to Azure Web App
+        run: |
+          az webapp config container set --name python-webapp \
+            --resource-group python-app-rg \
+            --docker-custom-image-name zltnacr.azurecr.io/python-hello-world:latest \
+            --docker-registry-server-url https://zltnacr.azurecr.io \
+            --docker-registry-server-user ${{ secrets.ACR_USERNAME }} \
+            --docker-registry-server-password ${{ secrets.ACR_PASSWORD }}
